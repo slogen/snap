@@ -1,0 +1,125 @@
+#!/bin/bash
+
+read_config() {
+  topdir="/mnt/backup"
+  NOW="$(date --rfc-3339=seconds)"
+  backup_host="$1"
+  backup_dir="$topdir/backups/$backup_host/"
+  snapshot_dir="$backup_dir/snaps"
+  keyfile="$topdir/snap/snap.key"
+  test -e "$keyfile" && key="$keyfile"
+  current_backup_dir="$backup_dir/current"
+  backup_log="$current_backup_dir/backup.log"
+  read -r -d '' sync_current_options <<'EOF'
+--archive
+--fuzzy
+--one-file-system
+--hard-links
+--itemize-changes
+--inplace
+--del
+--numeric-ids
+--stats
+--exclude *.img
+--exclude *.qcow2
+--exclude *.iso
+--exclude .gvfs
+EOF
+  remote_host="$backup_host"
+  unset backup_dirs
+  unset backup_count
+
+  snap_cfg="$backup_dir/snap.cfg"
+  . "$snap_cfg" || return 1
+  sync_current_options="${sync_current_options} ${key:+-z}"
+  backup_count="${backup_count:-60}"
+  snapshot_target="$snapshot_dir/${NOW/ /_}"
+  RSYNC_RSH="ssh -i ${key} -l root -c blowfish ${RSYNC_RSH_OPTIONS}"
+}
+
+make_backup_dir() {
+       orig_dir="$1"
+       # Make sure orig_dir ends in /
+       case $orig_dir in 
+	   (*/) ;;
+	   (*) orig_dir="${orig_dir}/"
+       esac
+       
+       name="$(echo "$orig_dir" | tr '/' '_')"
+       src_dir="${remote_host:+$remote_host:}$orig_dir"
+       target_dir="$current_backup_dir/$name/"
+       echo "--- BEGIN $src_dir to $target_dir"
+       date
+       RSYNC_RSH="$RSYNC_RSH"
+	 nice \
+	 ionice -c 3 \
+         rsync \
+	   $sync_current_options \
+	   --filter ":- .exclude_backup" \
+	   "$src_dir" "$target_dir"
+       ok=$?
+       echo "--- END $src_dir to $target_dir, Status: $ok"
+       # $?==3 means "stuff changed", lets OK that
+       test "$ok" -eq "3" && ok="0"
+       return $ok
+}
+
+
+make_backup_dirs() {
+  for d in "$@"; do
+      make_backup_dir "$d"
+      ok=$?
+      test '!' "$ok" -eq "0" && return $ok
+  done
+  return 0
+}
+
+make_snap() {
+    mkdir -p "$snapshot_dir" \
+	&& btrfs subvolume snapshot "$current_backup_dir" "$snapshot_target"
+}
+
+make_backup_() {
+  echo "--- BACKUP START: $NOW"
+      cleanup \
+      && make_backup_dirs $backup_dirs \
+      && make_snap
+  ok=$?
+  echo "--- BACKUP END: $(date --rfc-3339=seconds), Status: $ok"
+  return $ok
+}
+make_backup() {
+  read_config "$1" \
+      && test '!' -e "$snapshot_target" \
+      && make_backup_ "$@" >"$backup_log" 2>"$backup_log.err"
+  ok=$?
+  if test '!' "$ok" -eq "0"; then
+    tail -n 500 "$backup_log.err"
+    echo "------------------ LOG -----------------"
+    tail -n 1000 "$backup_log"
+  fi
+  return $ok
+}
+
+cleanup() {
+    for d in $(find "$snapshot_dir" -mindepth 1 -maxdepth 1 \
+	-name "20*-*-*:*:*" -printf "%p\n" \
+	| sort -r | tail -n +"$backup_count")
+    do
+	btrfs subvolume delete "$d"
+    done
+}
+
+backup_hosts() {
+  all_ok="0"
+  for x in "$@"; do 
+    make_backup "$x"
+    ok=$?
+    test '!' "$ok" -eq "0" && all_ok="$ok"
+  done
+  return $all_ok
+}
+
+backup_hosts "$@"
+
+
