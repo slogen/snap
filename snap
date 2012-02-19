@@ -50,7 +50,7 @@ make_backup_dir() {
        target_dir="$current_backup_dir/$name/"
        echo "--- BEGIN $src_dir to $target_dir"
        date
-       RSYNC_RSH="$RSYNC_RSH"
+       RSYNC_RSH="$RSYNC_RSH" \
 	 nice \
 	 ionice -c 3 \
          rsync \
