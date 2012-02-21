@@ -114,7 +114,7 @@ rebackup() {
 
 
 current_snap() {
-    if test '!' -e "$snapshot_target"; then
+    if test -e "$snapshot_target"; then
 	echo "Snapshot directory already exits: '$snapshot_target'"
 	return 15
     fi
