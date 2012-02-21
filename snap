@@ -59,8 +59,10 @@ make_backup_dir() {
 	   "$src_dir" "$target_dir"
        ok=$?
        echo "--- END $src_dir to $target_dir, Status: $ok"
-       # $?==3 means "stuff changed", lets OK that
+       # $?==3 means "stuff changed", OK that
        test "$ok" -eq "3" && ok="0"
+       # $?==24 means "files vanished before transferred", OK THAT
+       test "$ok" -eq "24" && ok="0"
        return $ok
 }
 
