@@ -9,8 +9,8 @@ read_config() {
   keyfile="$topdir/snap/snap.key"
   test -e "$keyfile" && key="$keyfile"
   current_backup_dir="$backup_dir/current"
-  backup_log="$current_backup_dir/backup.log"
-  read -r -d '' sync_current_options <<'EOF'
+  backup_log="$current_backup_dir/$(hostname)-backup.log"
+  read -r -d '' sync_current_options <<EOF
 --archive
 --fuzzy
 --one-file-system
@@ -24,6 +24,8 @@ read_config() {
 --exclude *.qcow2
 --exclude *.iso
 --exclude .gvfs
+--exclude ${backup_log##*/}
+--exclude ${backup_log##*/}.err
 EOF
   remote_host="$backup_host"
   unset backup_dirs
@@ -33,66 +35,112 @@ EOF
   . "$snap_cfg" || return 1
   sync_current_options="${sync_current_options} ${key:+-z}"
   backup_count="${backup_count:-60}"
-  snapshot_target="$snapshot_dir/${NOW/ /_}"
   RSYNC_RSH="ssh -i ${key} -l root -c blowfish ${RSYNC_RSH_OPTIONS}"
 }
 
-make_backup_dir() {
-       orig_dir="$1"
-       # Make sure orig_dir ends in /
-       case $orig_dir in 
-	   (*/) ;;
-	   (*) orig_dir="${orig_dir}/"
-       esac
-       
-       name="$(echo "$orig_dir" | tr '/' '_')"
-       src_dir="${remote_host:+$remote_host:}$orig_dir"
-       target_dir="$current_backup_dir/$name/"
-       echo "--- BEGIN $src_dir to $target_dir"
-       date
-       RSYNC_RSH="$RSYNC_RSH" \
-	 nice \
-	 ionice -c 3 \
-         rsync \
-	   $sync_current_options \
-	   --filter ":- .exclude_backup" \
-	   "$src_dir" "$target_dir"
-       ok=$?
-       echo "--- END $src_dir to $target_dir, Status: $ok"
-       # $?==3 means "stuff changed", OK that
-       test "$ok" -eq "3" && ok="0"
-       # $?==24 means "files vanished before transferred", OK THAT
-       test "$ok" -eq "24" && ok="0"
-       return $ok
+_actual_backup() {
+    echo "_actual_backup $@" 1>&2
+    local src
+    local dst
+    local ok
+    src="$1"
+    shift
+    dst="$1"
+    shift
+    case "$src" in 
+	(*/) ;;
+	(*) src="${src}/"
+    esac
+    case "$dst" in 
+	(${current_backup_dir}*/) ;;
+	(${current_backup_dir}*) dst="${dst}/";;
+	(*) 
+	    echo "destination outside target: '$dst'"
+	    return 255
+	    ;;
+    esac
+	
+    echo "--- BEGIN $src to $dst" 1>&2
+    date 1>&2
+    RSYNC_RSH="$RSYNC_RSH" \
+	nice \
+	ionice -c 3 \
+        rsync \
+	$sync_current_options \
+	  --filter ":- .exclude_backup" \
+	  "$@" \
+	  "$src" "$dst"
+    ok=$?
+    echo "--- END $src to $dst, Status: $ok"
+    return $ok
 }
 
+live_backup_dir() {
+    orig_dir="$1"
+    name="$(echo "$orig_dir" | tr '/' '_')"
+    src_dir="${remote_host:+$remote_host:}$orig_dir"
+    target_dir="$current_backup_dir/$name/"
+    _actual_backup "$src_dir" "$target_dir"
+    # $?==3 means "stuff changed", OK that
+    test "$ok" -eq "3" && ok="0"
+    # $?==24 means "files vanished before transferred", OK THAT
+    test "$ok" -eq "24" && ok="0"
+    return $ok
+}
 
-make_backup_dirs() {
+live_backup_dirs() {
   for d in "$@"; do
-      make_backup_dir "$d"
+      live_backup_dir "$d"
       ok=$?
       test '!' "$ok" -eq "0" && return $ok
   done
+  snapshot_target="$snapshot_dir/${NOW/ /_}"
   return 0
 }
 
-make_snap() {
+
+rebackup() {
+    remote_snapdir="${remote_snapdir:-/mnt/backup/backups/$backup_host/snaps}"
+    shift
+    dirs=$($RSYNC_RSH "$remote_host" \
+	find "$remote_snapdir" -maxdepth 1 -mindepth 1 -name "20*-*-*:*:*")
+    latest_dir=$(echo "$dirs" | sort -r | head -n 1)
+    latest_name="${latest_dir##*/}"
+    src_dir="${remote_host:+$remote_host:}$latest_dir"
+    dst_dir="$current_backup_dir/"
+    snapshot_target="$snapshot_dir/${latest_name}"
+    _actual_backup "$src_dir" "$dst_dir"
+}
+
+
+current_snap() {
+    if test '!' -e "$snapshot_target"; then
+	echo "Snapshot directory already exits: '$snapshot_target'"
+	return 15
+    fi
     mkdir -p "$snapshot_dir" \
-	&& btrfs subvolume snapshot "$current_backup_dir" "$snapshot_target"
+      && btrfs subvolume snapshot "$current_backup_dir" "$snapshot_target"
+}
+
+either_backup_dirs_or_snap() {
+    if test "x" == "x${backup_dirs}"; then
+	rebackup
+    else
+	make_backup_dirs $backup_dirs
+    fi
 }
 
 make_backup_() {
-  echo "--- BACKUP START: $NOW"
-      cleanup \
-      && make_backup_dirs $backup_dirs \
-      && make_snap
+  echo "--- BACKUP START: $NOW" 1>&2
+  cleanup \
+      && either_backup_dirs_or_snap \
+      && current_snap
   ok=$?
-  echo "--- BACKUP END: $(date --rfc-3339=seconds), Status: $ok"
+  echo "--- BACKUP END: $(date --rfc-3339=seconds), Status: $ok" 1>&2
   return $ok
 }
 make_backup() {
   read_config "$1" \
-      && test '!' -e "$snapshot_target" \
       && make_backup_ "$@" >"$backup_log" 2>"$backup_log.err"
   ok=$?
   if test '!' "$ok" -eq "0"; then
