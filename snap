@@ -81,6 +81,7 @@ live_backup_dir() {
     src_dir="${remote_host:+$remote_host:}$orig_dir"
     target_dir="$current_backup_dir/$name/"
     _actual_backup "$src_dir" "$target_dir"
+    ok="$?"
     # $?==3 means "stuff changed", OK that
     test "$ok" -eq "3" && ok="0"
     # $?==24 means "files vanished before transferred", OK THAT
