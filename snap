@@ -126,7 +126,7 @@ either_backup_dirs_or_snap() {
     if test "x" == "x${backup_dirs}"; then
 	rebackup
     else
-	make_backup_dirs $backup_dirs
+	live_backup_dirs $backup_dirs
     fi
 }
 
