@@ -39,7 +39,6 @@ EOF
 }
 
 _actual_backup() {
-    echo "_actual_backup $@" 1>&2
     local src
     local dst
     local ok
@@ -60,8 +59,7 @@ _actual_backup() {
 	    ;;
     esac
 	
-    echo "--- BEGIN $src to $dst" 1>&2
-    date 1>&2
+    echo "--- BEGIN $(date --rfc-3339=seconds) $src to $dst" 1>&2
     RSYNC_RSH="$RSYNC_RSH" \
 	nice \
 	ionice -c 3 \
@@ -71,7 +69,7 @@ _actual_backup() {
 	  "$@" \
 	  "$src" "$dst"
     ok=$?
-    echo "--- END $src to $dst, Status: $ok"
+    echo "--- END $(date --rfc-3339=seconds) $src to $dst, Status: $ok" 1>&2
     return $ok
 }
 
@@ -132,23 +130,18 @@ either_backup_dirs_or_snap() {
 }
 
 make_backup_() {
-  echo "--- BACKUP START: $NOW" 1>&2
+  echo "--- BACKUP START $@: $(date --rfc-3339=seconds), Timestamp: $NOW" 1>&2
   cleanup \
       && either_backup_dirs_or_snap \
       && current_snap
   ok=$?
-  echo "--- BACKUP END: $(date --rfc-3339=seconds), Status: $ok" 1>&2
+  echo "--- BACKUP END $@: $(date --rfc-3339=seconds), Status: $ok" 1>&2
   return $ok
 }
 make_backup() {
   read_config "$1" \
-      && make_backup_ "$@" >"$backup_log" 2>"$backup_log.err"
+      && make_backup_ "$@" >"$backup_log" 2> >(tee "$backup_log.err" >&2)
   ok=$?
-  if test '!' "$ok" -eq "0"; then
-    tail -n 500 "$backup_log.err"
-    echo "------------------ LOG -----------------"
-    tail -n 1000 "$backup_log"
-  fi
   return $ok
 }
 
@@ -167,6 +160,7 @@ backup_hosts() {
     make_backup "$x"
     ok=$?
     test '!' "$ok" -eq "0" && all_ok="$ok"
+    echo "* ok=$ok, all_ok=$all_ok"
   done
   return $all_ok
 }
