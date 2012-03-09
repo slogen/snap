@@ -164,7 +164,11 @@ work() {
 }
 
 # Atomic check for ${lock-file}
-if ( set -o noclobber; echo "$$" > "$lock_file") 2> /dev/null; then
+if ( set -o noclobber; \
+	[ -f "$lock_file" ] \
+        && ! kill -0 $(< "$lock_file") ; 2>/dev/null \
+        && rm -- "$lock_file"; \
+	echo "$$" > "$lock_file") 2> /dev/null; then
     # Log to the log-file. Note, that errors in or after make_snap does 
     # not get included in the btrfs snapshot
     work >"${log_file}" 2> >(tee "${log_file}.err" >&2)
