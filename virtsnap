@@ -115,9 +115,12 @@ create_snapshot_and_resume() {
     # 1. snapshots
     # 2. always resumes
     # 3. returns whether snapshot was a success (not the resumes)
+    echo "--- create_snapshot $(date --rfc-3339=seconds)" 1>&2
     create_snapshot
     local ok="$?"
+    echo "--- resume_domains $(date --rfc-3339=seconds)" 1>&2
     resume_domains
+    echo "--- back $(date --rfc-3339=seconds)" 1>&2
     return "$ok"
 }
 
@@ -139,14 +142,14 @@ cleanup() {
 
 act() {
     # Algorithm for making the backups
-    echo "--- BEGIN BACKUP $NOW" \
+    echo "--- BEGIN BACKUP VMs $(date --rfc-3339=seconds), Timestamp $NOW" 1>&2 \
     suspend_domains \
 	&& create_snapshot_and_resume \
 	&& mount_mount_dir \
 	&& rsync_content \
 	&& cleanup
     ok="$?"
-    echo "--- END BACKUP $(date --rfc-3339=seconds), status: $ok"
+    echo "--- END BACKUP VMs $(date --rfc-3339=seconds), status: $ok" 1>&2
     if test "$ok" -eq "0"; then
 	make_snap
     fi
@@ -164,14 +167,8 @@ work() {
 if ( set -o noclobber; echo "$$" > "$lock_file") 2> /dev/null; then
     # Log to the log-file. Note, that errors in or after make_snap does 
     # not get included in the btrfs snapshot
-    work >"${log_file}" 2>"${log_file}.err"
+    work >"${log_file}" 2> >(tee "${log_file}.err" >&2)
     ok="$?"
-    test "$ok" -eq "0" || { \
-	echo "BACKUP ERROR: $ok"; \
-	tail -n 100 "${log_file}.err"; \
-	echo "-----------------------------------------"; \
-	tail -n 100 "${log_file}"; \
-	} 1>&2
     exit "$ok"
 else
     echo "Another backup is already active!" 1>&2
