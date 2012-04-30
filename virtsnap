@@ -1,5 +1,4 @@
 #!/bin/bash
-set -x
 
 ### variables to hold the structural paths we operate on
 
