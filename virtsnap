@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 
 ### variables to hold the structural paths we operate on
 
@@ -10,7 +11,6 @@ log_name="$(hostname)-backup.log"
 log_file="${current_dir}/${log_name}"
 snaps_dir="${top_dir}/snaps"
 mount_dir="${top_dir}/mount"
-batch_link="${top_dir}/batch"
 
 ### variables for the LVM paths and names
 lvm_vg="/dev/h0r5"
@@ -80,35 +80,16 @@ completed() {
 }
 
 ### helper functions for making the actual backup
-# rsync needs a hack to prevent it from (almost) completely rewriting
-# the qcow files. We can workaround that by generating a batch.
-#
-# That needs *another* workaround for streaming the batch, as rsync
-# insists on generating a .sh script to "help" --read-batch.
-ensure_batch_link() {
-    # We need a softlink to /dev/fd/1 for the streaming hack
-    if test '!' -L "$batch_link"; then
-	rm -f "$batch_link" && ln -s /dev/fd/1 "$batch_link"
-    fi
-}
+## --no-whole-file prevents copying entire file!
 rsync_content() {
-    # We need a batch to prevent rewriting.
-    # I still don't understand exactly why
-    local rsync_opts="-a -H -x --inplace --block-size 8192 --del"
+    local rsync_opts="-a -H -x --inplace --block-size 8192 --del --itemize-changes --stats "
     findmnt --target "$mount_dir" \
-	&& ensure_batch_link \
-	&& { nice ionice -c 3 \
-	        rsync --only-write-batch "$batch_link" \
-	        $rsync_opts --quiet \
+	&& nice ionice -c 3 \
+	     rsync --no-whole-file \
+	        $rsync_opts \
 	          --exclude "${log_name}*" \
-	          "${mount_dir}/" "${current_dir}/" \
-	     | nice ionice -c 3 \
-                rsync --read-batch - $rsync_opts \
-	          --exclude "${log_name}*" \
-		    --itemize-changes --stats "${current_dir}/" \
-	;}
+	          "${mount_dir}/" "${current_dir}/"
 }
-
 
 create_snapshot_and_resume() {
     # helper function that 
