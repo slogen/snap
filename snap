@@ -67,6 +67,7 @@ _actual_backup() {
 	ionice -c 3 \
         rsync \
 	$sync_current_options \
+	  --no-whole-file \
 	  --filter ":- .exclude_backup" \
 	  "$@" \
 	  "$src" "$dst"
