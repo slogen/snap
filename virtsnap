@@ -30,7 +30,9 @@ declare -a suspended_domains
 ### helper functions for suspending and getting ready to backup
 
 create_snapshot() { 
-    lvcreate -L 50G -n "$lvm_snap_name" -s "$lvm_src" >/dev/null
+    lvcreate -L 50G -n "$lvm_snap_name" -s "$lvm_src" 2>&1 \
+      | grep -v "leaked on lv" \
+      | grep -v "/dev/nbd" 1>&2
 }
 
 mount_mount_dir() { 
@@ -52,7 +54,10 @@ umount_mount_dir() {
 	  || umount -l -f "${mount_dir}"; }
 }
 delete_snapshot() { 
-    lvdisplay "$lvm_snap" >/dev/null && lvremove -f "$lvm_snap" >/dev/null
+    { 
+	lvdisplay "$lvm_snap" >/dev/null && \
+	lvremove -f "$lvm_snap" >/dev/null; \
+    } 2>&1 | grep -v "leaked on lv" 1>&2
 }
 resume_domains() {
     local domain
