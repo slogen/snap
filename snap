@@ -1,6 +1,8 @@
 #!/bin/bash
 
 read_config() {
+  unset key
+  unset remote_snapdir
   topdir="/mnt/backup"
   NOW="$(date --rfc-3339=seconds)"
   backup_host="$1"
