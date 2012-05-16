@@ -1,5 +1,13 @@
 #!/bin/bash
 
+status_text() {
+    if test "$ok" -eq "0"; then
+	echo "SUCCESS ($ok)"
+    else
+	echo "FAILURE ($ok)"
+    fi
+}
+
 read_config() {
   unset key
   unset remote_snapdir
@@ -44,6 +52,8 @@ _actual_backup() {
     local src
     local dst
     local ok
+    local begin_time
+    local end_time
     src="$1"
     shift
     dst="$1"
@@ -60,8 +70,10 @@ _actual_backup() {
 	    return 255
 	    ;;
     esac
+
+    begin_time="$(date --rfc-3339=seconds)"
 	
-    echo "--- BEGIN $(date --rfc-3339=seconds) $src to $dst" 1>&2
+    echo "--- BEGIN $begin_time $src to $dst"
     RSYNC_RSH="$RSYNC_RSH" \
 	nice \
 	ionice -c 3 \
@@ -72,7 +84,8 @@ _actual_backup() {
 	  "$@" \
 	  "$src" "$dst"
     ok=$?
-    echo "--- END $(date --rfc-3339=seconds) $src to $dst, Status: $ok" 1>&2
+    end_time="$(date --rfc-3339=seconds)"
+    echo "--- END $end_time $src to $dst, Status: $ok"
     return $ok
 }
 
@@ -133,18 +146,31 @@ either_backup_dirs_or_snap() {
 }
 
 make_backup_() {
-  echo "--- BACKUP START $@: $(date --rfc-3339=seconds), Timestamp: $NOW" 1>&2
+  local begin_time
+  local end_time
+  local ok
+
+  begin_time="$(date --rfc-3339=seconds)"
+  echo "--- BACKUP START $@: $begin_time, Timestamp: $NOW"
   cleanup \
       && either_backup_dirs_or_snap \
       && current_snap
   ok=$?
-  echo "--- BACKUP END $@: $(date --rfc-3339=seconds), Status: $ok" 1>&2
+  end_time="$(date --rfc-3339=seconds)"
+  echo "--- BACKUP END $@: $end_time, Status: $ok"
   return $ok
 }
 make_backup() {
+  local begin_time
+  local end_time
+  local ok
+  begin_time="$(date --rfc-3339=seconds)"
   read_config "$1" \
       && make_backup_ "$@" >"$backup_log" 2> >(tee "$backup_log.err" >&2)
   ok=$?
+  end_time="$(date --rfc-3339=seconds)"
+  ok_text="$(status_text $ok)"
+  echo "$ok_text; @${backup_host}; ${backup_dirs}; END:$end_time BEGIN:$begin_time" 1>&2
   return $ok
 }
 
