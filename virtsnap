@@ -27,6 +27,14 @@ declare -a suspended_domains
 # All functions are written to carefully succeed and exit 0 or exit
 # non-0 and cause aborting processing and rolling back
 
+status_text() {
+    if test "$1" -eq "0"; then
+	echo "SUCCESS ($1)"
+    else
+	echo "FAILURE ($1)"
+    fi
+}
+
 ### helper functions for suspending and getting ready to backup
 
 create_snapshot() { 
@@ -89,7 +97,7 @@ rsync_content() {
     local rsync_opts="-a -H -x --inplace --block-size 8192 --del --itemize-changes --stats "
     findmnt --target "$mount_dir" \
 	&& nice ionice -c 3 \
-	     rsync --no-whole-file \
+	     rsync --progress --no-whole-file \
 	        $rsync_opts \
 	          --exclude "${log_name}*" \
 	          "${mount_dir}/" "${current_dir}/"
@@ -100,12 +108,12 @@ create_snapshot_and_resume() {
     # 1. snapshots
     # 2. always resumes
     # 3. returns whether snapshot was a success (not the resumes)
-    echo "--- create_snapshot $(date --rfc-3339=seconds)" 1>&2
+    echo "--- create_snapshot $(date --rfc-3339=seconds)"
     create_snapshot
     local ok="$?"
-    echo "--- resume_domains $(date --rfc-3339=seconds)" 1>&2
+    echo "--- resume_domains $(date --rfc-3339=seconds)"
     resume_domains
-    echo "--- back $(date --rfc-3339=seconds)" 1>&2
+    echo "--- back $(date --rfc-3339=seconds)"
     return "$ok"
 }
 
@@ -127,14 +135,14 @@ cleanup() {
 
 act() {
     # Algorithm for making the backups
-    echo "--- BEGIN BACKUP VMs $(date --rfc-3339=seconds), Timestamp $NOW" 1>&2 \
+    echo "--- BEGIN BACKUP VMs $(date --rfc-3339=seconds), Timestamp $NOW" \
     suspend_domains \
 	&& create_snapshot_and_resume \
 	&& mount_mount_dir \
 	&& rsync_content \
 	&& cleanup
     ok="$?"
-    echo "--- END BACKUP VMs $(date --rfc-3339=seconds), status: $ok" 1>&2
+    echo "--- END BACKUP VMs $(date --rfc-3339=seconds), status: $ok"
     if test "$ok" -eq "0"; then
 	make_snap
     fi
@@ -144,8 +152,13 @@ act() {
 work() {
     # Remember to cleanup!
     trap "completed" INT TERM EXIT
+    local begin_time="$(date --rfc-3339=seconds)"
     act
-    completed "$?"
+    local ok="$?"
+    local end_time="$(date --rfc-3339=seconds)"
+    local ok_text="$(status_text $ok)"
+    local msg="$ok_text; VIRTUAL; ${lvm_name}; END:$end_time BEGIN:$begin_time" 1>&2
+    completed "$ok"
 }
 
 # Atomic check for ${lock-file}
