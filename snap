@@ -1,5 +1,13 @@
 #!/bin/bash
 
+status_text() {
+    if test "$1" -eq "0"; then
+	echo "SUCCESS ($1)"
+    else
+	echo "FAILURE ($1)"
+    fi
+}
+
 read_config() {
   unset key
   unset remote_snapdir
@@ -40,12 +48,9 @@ EOF
 }
 
 _actual_backup() {
-    local src
-    local dst
-    local ok
-    src="$1"
+    local src="$1"
     shift
-    dst="$1"
+    local dst="$1"
     shift
     case "$src" in 
 	(*/) ;;
@@ -59,8 +64,10 @@ _actual_backup() {
 	    return 255
 	    ;;
     esac
+
+    local begin_time="$(date --rfc-3339=seconds)"
 	
-    echo "--- BEGIN $(date --rfc-3339=seconds) $src to $dst" 1>&2
+    echo "--- BEGIN $begin_time $src to $dst"
     RSYNC_RSH="$RSYNC_RSH" \
 	nice \
 	ionice -c 3 \
@@ -70,18 +77,19 @@ _actual_backup() {
 	  --filter ":- .exclude_backup" \
 	  "$@" \
 	  "$src" "$dst"
-    ok=$?
-    echo "--- END $(date --rfc-3339=seconds) $src to $dst, Status: $ok" 1>&2
+    local ok=$?
+    local end_time="$(date --rfc-3339=seconds)"
+    echo "--- END $end_time $src to $dst, Status: $ok"
     return $ok
 }
 
 live_backup_dir() {
-    orig_dir="$1"
-    name="$(echo "$orig_dir" | tr '/' '_')"
-    src_dir="${remote_host:+$remote_host:}$orig_dir"
-    target_dir="$current_backup_dir/$name/"
+    local orig_dir="$1"
+    local name="$(echo "$orig_dir" | tr '/' '_')"
+    local src_dir="${remote_host:+$remote_host:}$orig_dir"
+    local target_dir="$current_backup_dir/$name/"
     _actual_backup "$src_dir" "$target_dir"
-    ok="$?"
+    local ok="$?"
     # $?==3 means "stuff changed", OK that
     test "$ok" -eq "3" && ok="0"
     # $?==24 means "files vanished before transferred", OK THAT
@@ -90,6 +98,7 @@ live_backup_dir() {
 }
 
 live_backup_dirs() {
+  local ok
   for d in "$@"; do
       live_backup_dir "$d"
       ok=$?
@@ -132,18 +141,29 @@ either_backup_dirs_or_snap() {
 }
 
 make_backup_() {
-  echo "--- BACKUP START $@: $(date --rfc-3339=seconds), Timestamp: $NOW" 1>&2
+  local begin_time="$(date --rfc-3339=seconds)"
+  echo "--- BACKUP START $@: $begin_time, Timestamp: $NOW"
   cleanup \
       && either_backup_dirs_or_snap \
       && current_snap
-  ok=$?
-  echo "--- BACKUP END $@: $(date --rfc-3339=seconds), Status: $ok" 1>&2
+  local ok=$?
+  local end_time="$(date --rfc-3339=seconds)"
+  echo "--- BACKUP END $@: $end_time, Status: $ok"
   return $ok
 }
 make_backup() {
+  local begin_time="$(date --rfc-3339=seconds)"
   read_config "$1" \
       && make_backup_ "$@" >"$backup_log" 2> >(tee "$backup_log.err" >&2)
-  ok=$?
+  local ok=$?
+  local end_time="$(date --rfc-3339=seconds)"
+  local ok_text="$(status_text $ok)"
+  local msg="$ok_text; @${backup_host}; ${backup_dirs}; END:$end_time BEGIN:$begin_time" 1>&2
+  if test "$ok" -eq "0"; then
+      echo "$msg"
+  else
+      echo "$msg" 1>&2
+  fi
   return $ok
 }
 
@@ -157,13 +177,21 @@ cleanup() {
 }
 
 backup_hosts() {
-  all_ok="0"
+  local failures=0
+  local count=0
   for x in "$@"; do 
     make_backup "$x"
     ok=$?
-    test '!' "$ok" -eq "0" && all_ok="$ok"
-    echo "* ok=$ok, all_ok=$all_ok"
+    count=$((count + 1))
+    test '!' "$ok" -eq "0" && failures=$((failures + 1))
   done
+  local msg="$failures failures of $count backups"
+  if test '!' "$failures" -eq "0"; then
+    echo "*****************************" 1>&2
+    echo "$msg" 1>&2
+  else
+    echo "$msg"
+  fi
   return $all_ok
 }
 
