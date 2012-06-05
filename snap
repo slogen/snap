@@ -23,7 +23,6 @@ read_config() {
 --numeric-ids
 --stats
 --exclude *.img
---exclude *.qcow2
 --exclude *.iso
 --exclude .gvfs
 --exclude ${backup_log##*/}
@@ -169,5 +168,3 @@ backup_hosts() {
 }
 
 backup_hosts "$@"
-
-
