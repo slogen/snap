@@ -74,6 +74,7 @@ _actual_backup() {
 	nice \
 	ionice -c 3 \
         rsync \
+	--rsync-path="nice ionice -c 3 rsync" \
 	$sync_current_options \
 	  --no-whole-file \
 	  --filter ":- .exclude_backup" \
