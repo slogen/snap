@@ -1,5 +1,8 @@
 #!/bin/bash
 
+#ONLY_CLEANUP=yes
+topdir="/mnt/backup"
+
 status_text() {
     if test "$1" -eq "0"; then
 	echo "SUCCESS ($1)"
@@ -11,7 +14,6 @@ status_text() {
 read_config() {
   unset key
   unset remote_snapdir
-  topdir="/mnt/backup"
   NOW="$(date --rfc-3339=seconds)"
   backup_host="$1"
   backup_dir="$topdir/backups/$backup_host/"
@@ -43,7 +45,7 @@ EOF
   snap_cfg="$backup_dir/snap.cfg"
   . "$snap_cfg" || return 1
   sync_current_options="${sync_current_options} ${key:+-z}"
-  backup_count="${backup_count:-60}"
+  backup_count="${backup_count:-${default_backup_count:-60}}"
   RSYNC_RSH="ssh -i ${key} -l root -c blowfish ${RSYNC_RSH_OPTIONS}"
 }
 
@@ -124,6 +126,9 @@ rebackup() {
 
 
 current_snap() {
+    if test "xyes" == "x${ONLY_CLEANUP}"; then
+	return 0
+    fi
     if test -e "$snapshot_target"; then
 	echo "Snapshot directory already exits: '$snapshot_target'"
 	return 15
@@ -133,6 +138,9 @@ current_snap() {
 }
 
 either_backup_dirs_or_snap() {
+    if test "xyes" == "x${ONLY_CLEANUP}"; then
+	return 0
+    fi
     if test "x" == "x${backup_dirs}"; then
 	rebackup
     else
@@ -194,5 +202,8 @@ backup_hosts() {
   fi
   return $all_ok
 }
+
+global_cfg="${topdir}/snap/global.cfg"
+test -f "$global_cfg" && . "$global_cfg"
 
 backup_hosts "$@"
