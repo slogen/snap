@@ -163,6 +163,8 @@ make_backup_() {
 make_backup() {
   local begin_time="$(date --rfc-3339=seconds)"
   read_config "$1" \
+      && { test -d "$current_backup_dir" \
+           || btrfs subvol create "$current_backup_dir"; } \
       && make_backup_ "$@" >"$backup_log" 2> >(tee "$backup_log.err" >&2)
   local ok=$?
   local end_time="$(date --rfc-3339=seconds)"
