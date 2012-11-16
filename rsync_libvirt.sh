@@ -106,8 +106,7 @@ act() {
     suspend_domains \
 	&& create_snapshot_and_resume \
 	&& mount_mount_dir \
-	&& rsync_content "$@" \
-	&& cleanup
+	&& rsync_content "$@"
     
     ok="$?"
     return "$ok"
