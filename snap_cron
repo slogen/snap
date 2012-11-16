@@ -1,0 +1,14 @@
+#!/bin/bash
+
+DIR=/mnt/backup/snap
+LOG="$DIR/snap_all.log"
+
+if "$DIR/snap_all" >& "$DIR/snap_all.log"; then
+   SUBJECT="Backup: ALL OK ($HOSTNAME)"
+else
+   SUBJECT="Backup: FAILURE ($HOSTNAME)"
+fi
+
+mail -s "$SUBJECT" root@actua.dk < "$LOG"
+
+
