@@ -3,6 +3,8 @@
 #ONLY_CLEANUP=yes
 topdir="/mnt/backup"
 
+set -e
+
 status_text() {
     if test "$1" -eq "0"; then
 	echo "SUCCESS ($1)"
@@ -46,7 +48,7 @@ EOF
   . "$snap_cfg" || return 1
   sync_current_options="${sync_current_options} ${key:+-z}"
   backup_count="${backup_count:-${default_backup_count:-60}}"
-  RSYNC_RSH="ssh -i ${key} -l root -c blowfish ${RSYNC_RSH_OPTIONS}"
+  RSYNC_RSH="ssh -i ${key} -l root -c arcfour ${RSYNC_RSH_OPTIONS}"
 }
 
 _actual_backup() {
@@ -74,7 +76,7 @@ _actual_backup() {
 	nice \
 	ionice -c 3 \
         rsync \
-	--rsync-path="nice ionice -c 3 rsync" \
+	--rsync-path="${rsync_path:-nice ionice -c 3 rsync}" \
 	$sync_current_options \
 	  --no-whole-file \
 	  --filter ":- .exclude_backup" \
@@ -122,6 +124,16 @@ rebackup() {
     src_dir="${remote_host:+$remote_host:}$latest_dir"
     dst_dir="$current_backup_dir/"
     snapshot_target="$snapshot_dir/${latest_name}"
+    unset rsync_path
+    _actual_backup "$src_dir" "$dst_dir"
+}
+
+libvirtbackup() {
+    shift
+    src_dir="${remote_host:+$remote_host:}/var/lib/libvirt"
+    dst_dir="$current_backup_dir/"
+    snapshot_target="$snapshot_dir/${NOW/ /_}"
+    rsync_path="/root/rsync_libvirt.sh"
     _actual_backup "$src_dir" "$dst_dir"
 }
 
@@ -142,11 +154,15 @@ either_backup_dirs_or_snap() {
     if test "xyes" == "x${ONLY_CLEANUP}"; then
 	return 0
     fi
-    if test "x" == "x${backup_dirs}"; then
-	rebackup
-    else
-	live_backup_dirs $backup_dirs
-    fi
+
+    case "${backup_dirs}" in
+	("libvirt")
+	    libvirtbackup;;
+	("")
+	    rebackup;;
+	(*)
+	    live_backup_dirs $backup_dirs
+    esac
 }
 
 make_backup_() {
@@ -160,11 +176,15 @@ make_backup_() {
   echo "--- BACKUP END $@: $end_time, Status: $ok"
   return $ok
 }
+ready_target() {
+  local target_dir="$current_backup_dir"
+  test -d "$target_dir" || btrfs subvol create "$target_dir"
+}
+
 make_backup() {
   local begin_time="$(date --rfc-3339=seconds)"
   read_config "$1" \
-      && { test -d "$current_backup_dir" \
-           || btrfs subvol create "$current_backup_dir"; } \
+      && ready_target \
       && make_backup_ "$@" >"$backup_log" 2> >(tee "$backup_log.err" >&2)
   local ok=$?
   local end_time="$(date --rfc-3339=seconds)"
@@ -179,12 +199,14 @@ make_backup() {
 }
 
 cleanup() {
-    for d in $(find "$snapshot_dir" -mindepth 1 -maxdepth 1 \
-	-name "20*-*-*:*:*" -printf "%p\n" \
-	| sort -r | tail -n +"$backup_count")
-    do
-	btrfs subvolume delete "$d"
-    done
+    if test -d "$snapshot_dir"; then
+	for d in $(find "$snapshot_dir" -mindepth 1 -maxdepth 1 \
+	    -name "20*-*-*:*:*" -printf "%p\n" \
+	    | sort -r | tail -n +"$backup_count")
+	do
+	    btrfs subvolume delete "$d"
+	done
+    fi
 }
 
 backup_hosts() {

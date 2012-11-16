@@ -5,5 +5,3 @@
     -mindepth 1 -maxdepth 2 \
     -name 'snap.cfg' -print  \
     | sed -e 's/.*\/\(.*\)\/snap.cfg/\1/')
-
-test -d "/mnt/backup/backups/$(hostname).vm" && /mnt/backup/snap/virtsnap
