@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -x
-
 ### variables for the LVM paths and names
 lvm_vg="/dev/h0r5"
 lvm_name="host0.libvirt"
