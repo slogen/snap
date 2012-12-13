@@ -48,7 +48,7 @@ EOF
   . "$snap_cfg" || return 1
   sync_current_options="${sync_current_options} ${key:+-z}"
   backup_count="${backup_count:-${default_backup_count:-60}}"
-  RSYNC_RSH="ssh -i ${key} -l root -c arcfour ${RSYNC_RSH_OPTIONS}"
+  RSYNC_RSH="ssh -o TCPKeepAlive=yes -i ${key} -l root -c arcfour ${RSYNC_RSH_OPTIONS}"
 }
 
 _actual_backup() {
@@ -144,7 +144,11 @@ current_snap() {
     fi
     if test -e "$snapshot_target"; then
 	echo "Snapshot directory already exits: '$snapshot_target'"
-	return 15
+	if test "xyes" == "x${IGNORE_EXISTING_SNAP}"; then
+	    return 0
+	else
+	    return 15
+	fi
     fi
     mkdir -p "$snapshot_dir" \
       && btrfs subvolume snapshot "$current_backup_dir" "$snapshot_target"
