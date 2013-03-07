@@ -76,6 +76,7 @@ _actual_backup() {
 	nice \
 	ionice -c 3 \
 	rsync \
+	${SNAP_RSYNC_OPTIONS} \
 	${rsync_path:+--rsync-path="${rsync_path}"} \
 	$sync_current_options \
 	  --no-whole-file \
