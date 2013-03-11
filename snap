@@ -31,8 +31,9 @@ read_config() {
 --hard-links
 --itemize-changes
 --inplace
---del
+--delete-during
 --numeric-ids
+--timeout=43200
 --stats
 --exclude *.img
 --exclude *.iso
