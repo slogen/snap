@@ -3,7 +3,9 @@
 DIR=/mnt/backup/snap
 LOG="$DIR/snap_all.log"
 
-if "$DIR/snap_all" >& "$DIR/snap_all.log"; then
+test -e "$LOG" && rm -f "$LOG"
+
+if "$DIR/snap_all" >& "$LOG"; then
    SUBJECT="Backup: ALL OK ($HOSTNAME)"
 else
    SUBJECT="Backup: FAILURE ($HOSTNAME)"
