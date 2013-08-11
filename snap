@@ -45,6 +45,7 @@ read_config() {
 --exclude .gvfs
 --exclude ${backup_log##*/}
 --exclude ${backup_log##*/}.err
+${sync_additional_options}
 EOF
   remote_host="$backup_host"
 
