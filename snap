@@ -3,8 +3,6 @@
 #ONLY_CLEANUP=yes
 topdir="/mnt/backup"
 
-set -e
-
 status_text() {
     if test "$1" -eq "0"; then
 	echo "SUCCESS ($1)"
@@ -20,6 +18,7 @@ read_config() {
   unset backup_dirs
   unset backup_count
   unset keyfile
+  unset rsync_path
 
   NOW="$(date --rfc-3339=seconds)"
   backup_host="$1"
