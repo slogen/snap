@@ -1,4 +1,5 @@
 #!/bin/bash
+#set -x
 
 ### variables for the LVM paths and names
 lvm_vg="/dev/h0r5"
@@ -21,7 +22,7 @@ declare -a suspended_domains
 ### helper functions for suspending and getting ready to backup
 
 create_snapshot() { 
-    lvcreate -L 50G -n "$lvm_snap_name" -s "$lvm_src" 1>&2
+    lvcreate -L 100G -n "$lvm_snap_name" -s "$lvm_src" 1>&2
     #2>&1 \
     #  | grep -v "leaked on lv" \
     #  | grep -v "/dev/nbd" \
@@ -31,7 +32,7 @@ create_snapshot() {
 
 mount_mount_dir() { 
     test -d "$mount_dir" || mkdir -p "$mount_dir"
-    mount -o ro,noexec,nosuid "$lvm_snap" "$mount_dir"
+    mount -o ro,noexec,nosuid --bind "$lvm_snap" "$mount_dir"
 }
 suspend_domains() {
     local domains=($(virsh -r -q list | grep 'running' | awk '{print $2;}'))
@@ -45,14 +46,15 @@ suspend_domains() {
 umount_mount_dir() {
     findmnt --target "$mount_dir" >/dev/null 2>&1 && \
 	{ umount "${mount_dir}" >/dev/null \
-	  || umount -f "${mount_dir}" >/dev/null \
-	  || umount -l -f "${mount_dir}"; }
+	  || umount -f "${mount_dir}" >/dev/null; }
 }
 delete_snapshot() { 
     { 
 	lvdisplay "$lvm_snap" >/dev/null && \
 	lvremove -f "$lvm_snap" >/dev/null; \
-    } 2>&1 | grep -v "leaked on lv" 1>&2
+    } 2>&1 | grep -v "leaked on lv" \
+	    | grep -v "One or more specified logical volume" \
+    1>&2
 }
 resume_domains() {
     local domain
@@ -83,6 +85,7 @@ completed() {
 ## --no-whole-file prevents copying entire file!
 rsync_content() {
     #local mount_dir="/tmp/tst2"
+    echo "rsync: $@" 1>&2
     nice ionice -c 3 rsync ${@/$lastarg/$mount_dir/}
 }
 
@@ -100,6 +103,26 @@ create_snapshot_and_resume() {
     return "$ok"
 }
 
+#### HACK No snapshot
+#create_snapshot_and_resume() {
+#    resume_domains
+#    return 0
+#}
+#mount_mount_dir() {
+#    test -d "$mount_dir" || mkdir -p "$mount_dir"
+#    mount -o ro,noexec,nosuid --bind /var/lib/libvirt "$mount_dir" \
+#	2>&1 \
+#	  | grep -v "seems to be mounted read-write" \
+#	1>&2
+#    local ok="$?"
+#    if test "x$ok" = "x1"; then
+#	ok=0
+#    fi
+#    return "$ok"
+#}
+#rsync_content() { echo "HACK rsync_content" 1>&2; }
+#####################
+
 act() {
     suspend_domains \
 	&& create_snapshot_and_resume \
@@ -109,7 +132,6 @@ act() {
     ok="$?"
     return "$ok"
 }
-
 work() {
     # Remember to cleanup!
     trap "completed" INT TERM EXIT
